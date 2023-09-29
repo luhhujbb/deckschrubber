@@ -19,12 +19,12 @@ import (
 
 	"golang.org/x/crypto/ssh/terminal"
 
-	log "github.com/sirupsen/logrus"
 	"github.com/docker/distribution/context"
 	schema2 "github.com/docker/distribution/manifest/schema2"
 	"github.com/docker/distribution/reference"
 	"github.com/docker/distribution/registry/client"
 	"github.com/fraunhoferfokus/deckschrubber/util"
+	log "github.com/sirupsen/logrus"
 )
 
 var (
@@ -33,6 +33,8 @@ var (
 	registryURL *string
 	// Regexps for filtering repositories and tags
 	repoRegexpStr, tagRegexpStr, negTagRegexpStr *string
+	//Repo Exact match
+	repoExactMatch *string
 	// Maximum age of image to consider for deletion
 	day, month, year *int
 	// Max number of repositories to be fetched from registry
@@ -72,6 +74,8 @@ func init() {
 	year = flag.Int("year", 0, "max age in days")
 	// Regexp for images (default = .*)
 	repoRegexpStr = flag.String("repo", ".*", "matching repositories (allows regexp)")
+	// ExactMatch repository
+	repoExactMatch = flag.String("only-repo", "", "match only this repo, ie repos and repo are ignored")
 	// Regexp for tags (default = .*)
 	tagRegexpStr = flag.String("tag", ".*", "matching tags (allows regexp)")
 	// Negative regexp for tags (default = empty)
@@ -142,13 +146,21 @@ func main() {
 
 	// Empty context for all requests in sequel
 	ctx := context.Background()
+	numFilled := -1
 
-	// Fetch all repositories from the registry
-	numFilled, err := r.Repositories(ctx, entries, "")
-	if err != nil && err != io.EOF {
-		log.Fatalf("Error while fetching repositories! (err: %v)", err)
+	if *repoExactMatch == "" {
+		// Fetch all repositories from the registry
+		repoNumber, err := r.Repositories(ctx, entries, "")
+		numFilled = repoNumber
+		if err != nil && err != io.EOF {
+			log.Fatalf("Error while fetching repositories! (err: %v)", err)
+		}
+		log.WithFields(log.Fields{"count": numFilled, "entries": entries[:numFilled]}).Info("Successfully fetched repositories.")
+	} else {
+		numFilled = 1
+		entries[0] = *repoExactMatch
+
 	}
-	log.WithFields(log.Fields{"count": numFilled, "entries": entries[:numFilled]}).Info("Successfully fetched repositories.")
 
 	// Deadline defines the youngest creation date for an image
 	// to be considered for deletion
