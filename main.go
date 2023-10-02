@@ -19,6 +19,7 @@ import (
 
 	"golang.org/x/crypto/ssh/terminal"
 
+	distribution "github.com/docker/distribution"
 	"github.com/docker/distribution/context"
 	schema2 "github.com/docker/distribution/manifest/schema2"
 	"github.com/docker/distribution/reference"
@@ -159,7 +160,6 @@ func main() {
 	} else {
 		numFilled = 1
 		entries[0] = *repoExactMatch
-
 	}
 
 	// Deadline defines the youngest creation date for an image
@@ -208,23 +208,41 @@ func main() {
 		// This involves fetching the manifest, its details,
 		// and the corresponding blob information
 		tagFetchDataErrors := false
+		retry := []int{0, 1, 2, 3, 4, 5}
 		for _, tag := range tagsData {
 			tagLogger := logger.WithField("tag", tag)
 
 			tagLogger.Debug("Fetching tag...")
-			desc, err := tagsService.Get(ctx, tag)
-			if err != nil {
-				tagLogger.Error("Could not fetch tag!")
-				tagFetchDataErrors = true
-				break
+			var desc distribution.Descriptor
+			for _, idx := range retry {
+				desc, err = tagsService.Get(ctx, tag)
+				if err != nil {
+					tagLogger.Error("Could not fetch tag!")
+
+				} else {
+					break
+				}
+
+				if idx == 5 {
+					tagFetchDataErrors = true
+					break
+				}
 			}
 
 			tagLogger.Debug("Fetching manifest...")
-			mnfst, err := manifestService.Get(ctx, desc.Digest)
-			if err != nil {
-				tagLogger.Error("Could not fetch manifest!")
-				tagFetchDataErrors = true
-				break
+			var mnfst distribution.Manifest
+			for _, idx := range retry {
+				mnfst, err = manifestService.Get(ctx, desc.Digest)
+				if err != nil {
+					tagLogger.Error("Could not fetch manifest!")
+				} else {
+					break
+				}
+
+				if idx == 5 {
+					tagFetchDataErrors = true
+					break
+				}
 			}
 
 			tagLogger.Debug("Parsing manifest details...")
@@ -250,6 +268,9 @@ func main() {
 			json.Unmarshal(b, &blobInfo)
 
 			tags = append(tags, Image{entry, tag, blobInfo.Created, desc})
+			if tagFetchDataErrors {
+				break
+			}
 		}
 
 		if tagFetchDataErrors {
